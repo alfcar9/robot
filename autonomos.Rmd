@@ -1,0 +1,99 @@
+---
+title: "autonomos"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+```{r, message=FALSE}
+library(tidyverse)
+library(raster)
+library(keras)
+library(RcppRoll)
+library(jpeg)
+library(readr)
+library(imager)
+```
+
+```{r create_csv}
+resol <- .3   # recomiendo .1, .2, .3, ...etc
+
+#path = "/home/egranadoo/autonomos-imgs/bag-2017-03-18-01-12-00/"
+path = "autonomos-imgs/bag-2017-03-18-01-12-00/"
+
+setwd("~/Desktop/1er_Semestre/Aprendzaje Maquina/Proyectos/robot")
+out.file <- ""
+file.names <- dir(path, pattern =".jpg")
+n <- length(file.names)
+file.names <- sapply(1:n, function(i) paste(path, file.names[i], sep = ""))
+dim <- (resol*480)*(resol*640)
+
+image_df <- rep(NA, dim) %>% t() %>% as.data.frame()
+
+for(i in 1:5){
+im <- load.image(file.names[i])
+thmb <- (resize(im,-30,-30) %>% imsplit("c"))[[2]]
+image_df[i,] <- (as.data.frame(thmb))$value %>% t()
+}
+```
+
+
+```{r}
+nrow <- 480*resol
+ncol <- 640*resol
+mostrar_imagen <- function(renglon, dat){
+  v <- as.numeric(dat %>% dplyr::select(contains('V'))%>% .[renglon,])
+  mat <- (t(matrix(v, nrow = nrow, ncol = ncol, byrow=T))[,nrow:1])
+  image(mat, axes = F, col=gray(0:255/255))
+}
+```
+
+```{r, fig.height=4}
+mostrar_imagen(2, image_df)
+```
+
+
+```{r}
+lambda1 <- 0.01
+lambda2 <- 0.01
+filtro1 <- 4
+filtro2 <- 12
+neuronas <- 20
+lr1 <- 0.045
+momentum1 <- 0.9
+
+model <- keras_model_sequential() 
+model %>%
+layer_conv_2d(filters = filtro1, kernel_size = c(3,3), activation = 'relu',
+              input_shape = c(nrow, ncol, 1), padding ='same',
+              kernel_regularizer = regularizer_l2(lambda1) ) %>%
+              layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+              layer_dropout(rate = 0.25) %>%
+  
+layer_conv_2d(filters = filtro2, kernel_size = c(3,3), activation = 'relu',
+              input_shape = c(nrow, ncol, 1), padding ='same',
+              kernel_regularizer = regularizer_l2(lambda2) ) %>%
+              layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+              layer_dropout(rate = 0.25) %>% 
+  
+layer_flatten() %>% 
+layer_dense(units = neuronas, activation = 'relu') %>%
+layer_dropout(rate = 0.50) %>%
+layer_dense(units = 2, activation = 'softmax')
+
+model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_sgd(lr = lr1, momentum = momentum1),
+  metrics = c('accuracy','categorical_crossentropy')
+)
+history <- model %>% fit(
+  x_train, y_train,
+  epochs = 150, batch_size = (ncol*nrow), 
+  validation_data = list(x_test, y_test))
+
+score <- (model$evaluate(x_test, y_test) %>% flatten_dbl())[1]
+score_df[i,] = c(lambda1, lambda2, filtro1, filtro2, neuronas, lr1, momentum1, score)
+```
