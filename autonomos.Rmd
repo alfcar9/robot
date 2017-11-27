@@ -9,41 +9,54 @@ knitr::opts_chunk$set(cache=TRUE)
 ```
 
 ```{r, message=FALSE}
-library(tidyverse)
-library(raster)
-library(keras)
-library(RcppRoll)
+library(imager)
 library(jpeg)
 library(readr)
-library(imager)
+library(tidyverse)
+library(keras)
+library(RcppRoll)
 ```
 
 ```{r create_csv}
-resol <- .3   # recomiendo .1, .2, .3, ...etc
+#setwd("~/Desktop/1er_Semestre/Aprendzaje Maquina/Proyectos/robot/autonomos-imgs/") #Asegurate de estar parado aqui, corre esto en consola.
+#setwd(~/home/egranadoo/autonomos-imgs")
 
-#path = "/home/egranadoo/autonomos-imgs/bag-2017-03-18-01-12-00/"
-path = "autonomos-imgs/bag-2017-03-18-01-12-00/"
+path <- "autonomos-imgs/"
+listpaths <- dir(path)
+m <- length(listpaths)
+file.names <- lapply(1:m, function(i){ 
+  path <- paste("autonomos-imgs/", listpaths[i],"/", sep="")
+  return(paste("autonomos-imgs/", listpaths[i],"/", dir(path), sep=""))
+})
 
-setwd("~/Desktop/1er_Semestre/Aprendzaje Maquina/Proyectos/robot")
-out.file <- ""
-file.names <- dir(path, pattern =".jpg")
-n <- length(file.names)
-file.names <- sapply(1:n, function(i) paste(path, file.names[i], sep = ""))
-dim <- (resol*480)*(resol*640)
+file.names[[4]] <- sample(file.names[[4]], 0.05*length(file.names[[4]]))
+                          
+file.names <- flatten_chr(file.names)
+```
 
+```{r, cache=TRUE}
+resol <- 30   # recomiendo 10, 20, 30, ...etc Es el tamaño de la imagen reducida en porcentaje. 10% de la imagen original, por ejemplo.
+num_obs <- length(file.names)
+dim <- (resol/100*480)*(resol/100*640)
 image_df <- rep(NA, dim) %>% t() %>% as.data.frame()
 
-for(i in 1:5){
-im <- load.image(file.names[i])
-thmb <- (resize(im,-30,-30) %>% imsplit("c"))[[2]]
-image_df[i,] <- (as.data.frame(thmb))$value %>% t()
+for(i in 1:num_obs){
+  im <- load.image(file.names[i])
+  thmb <- (resize(im,-resol,-resol) %>% imsplit("c"))[[2]]
+  image_df[i,] <- (as.data.frame(thmb))$value %>% t()
 }
 ```
 
+```{r}
+m <- 480*640*(resol/100)^2
+nrow <- 480*resol/100
+ncol <- 640*resol/100
+
+image_df[,(m+1)] <- rbinom(nrow(image_df), 1, prob = 0.2)
+colnames(image_df)[length(image_df)] <- "estado" 
+```
 
 ```{r}
-nrow <- 480*resol
-ncol <- 640*resol
 mostrar_imagen <- function(renglon, dat){
   v <- as.numeric(dat %>% dplyr::select(contains('V'))%>% .[renglon,])
   mat <- (t(matrix(v, nrow = nrow, ncol = ncol, byrow=T))[,nrow:1])
@@ -53,6 +66,26 @@ mostrar_imagen <- function(renglon, dat){
 
 ```{r, fig.height=4}
 mostrar_imagen(2, image_df)
+```
+
+```{r}
+set.seed(130912)
+
+trainid <- sample(1:num_obs, floor(num_obs*.7))
+testid <- setdiff(1:num_obs, trainid)
+
+train <- image_df[trainid, ]
+test <-  image_df[testid, ]
+
+x_train <- train %>% dplyr::select(-estado) %>% as.matrix
+dim(x_train) <- c(nrow(x_train), nrow, ncol, 1)
+estado_train <- train %>% dplyr::select(estado) %>% flatten_dbl()
+y_train <- to_categorical(estado_train, 2)
+
+x_test <- test %>% dplyr::select(-estado) %>% as.matrix()
+dim(x_test) <- c(nrow(x_test), nrow, ncol, 1)
+estado_test <- test %>% dplyr::select(estado) %>% flatten_dbl()
+y_test <- to_categorical(estado_test, 2)
 ```
 
 
@@ -91,9 +124,10 @@ model %>% compile(
 )
 history <- model %>% fit(
   x_train, y_train,
-  epochs = 150, batch_size = (ncol*nrow), 
+  epochs = 20, batch_size = (ncol*nrow), 
   validation_data = list(x_test, y_test))
 
-score <- (model$evaluate(x_test, y_test) %>% flatten_dbl())[1]
-score_df[i,] = c(lambda1, lambda2, filtro1, filtro2, neuronas, lr1, momentum1, score)
+model_serialized <- serialize_model(model)
+
+#score <- (model$evaluate(x_test, y_test) %>% flatten_dbl())[1]
 ```
