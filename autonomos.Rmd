@@ -19,7 +19,7 @@ library(RcppRoll)
 
 
 ```{r, cache=TRUE}
-resol <- 30 
+resol <- 15 
 path <- "imgs/"
 #path <- "../images/imgs/"
 file.names <- dir(path)
@@ -31,7 +31,6 @@ for(i in 1:num_obs){
   im <- load.image(paste(path, file.names[i], sep = ""))
   thmb <- (resize(im,-resol,-resol) %>% imsplit("c"))[[2]]
   image_df[i,] <- (as.data.frame(thmb))$value %>% t()
-  # print(i)
 }
 ```
 
@@ -41,7 +40,6 @@ nrow <- 480*resol/100
 ncol <- 640*resol/100
 path_csv <- "~/Desktop/1er_Semestre/Aprendzaje Maquina/Proyectos/robot/imgs-eval.csv"
 image_df[,(m+1)] <- read.csv(file=path_csv, sep=",", colClasses=c("NULL", NA))
-# image_df[,(m+1)] <- rbinom(nrow(image_df), 1, prob = 0.2)
 colnames(image_df)[length(image_df)] <- "estado" 
 ```
 
@@ -135,12 +133,12 @@ testid <- setdiff(1:num_obs, trainid)
 train <- image_df[trainid, ]
 test <-  image_df[testid, ]
 
-x_train <- train %>% dplyr::select(-estado) %>% as.matrix
+x_train <- train %>% select(-estado) %>% as.matrix
 dim(x_train) <- c(nrow(x_train), nrow, ncol, 1)
 estado_train <- train %>% dplyr::select(estado) %>% flatten_dbl()
 y_train <- to_categorical(estado_train, 2)
 
-x_test <- test %>% dplyr::select(-estado) %>% as.matrix()
+x_test <- test %>% select(-estado) %>% as.matrix()
 dim(x_test) <- c(nrow(x_test), nrow, ncol, 1)
 estado_test <- test %>% dplyr::select(estado) %>% flatten_dbl()
 y_test <- to_categorical(estado_test, 2)
@@ -148,8 +146,8 @@ y_test <- to_categorical(estado_test, 2)
 
 
 ```{r}
-lambda1 <- 0.01
-lambda2 <- 0.01
+lambda1 <- 0.02
+lambda2 <- 0.02
 filtro1 <- 4
 filtro2 <- 12
 neuronas <- 20
@@ -182,7 +180,7 @@ model %>% compile(
 )
 history <- model %>% fit(
   x_train, y_train,
-  epochs = 20, batch_size = (ncol*nrow), 
+  epochs = 250, batch_size = (ncol*nrow), 
   validation_data = list(x_test, y_test))
 
 model_serialized <- serialize_model(model)
@@ -190,6 +188,51 @@ model_serialized <- serialize_model(model)
 #score <- (model$evaluate(x_test, y_test) %>% flatten_dbl())[1]
 ```
 
+```{r}
+plot(history)
+```
 
+Modelo logit
+```{r}
+library(glmnet)
+library(data.table)
+library(lattice)
+x_train <- train %>% select(-estado)
+modlogit <- cv.glmnet(as.matrix(x_train), estado_train, alpha=1, family = 'binomial')
+plot(modlogit)
+```
 
+```{r}
+devianza_calc <- function(x, y){
+  dev_fun <- function(p){
+   -(sum(y*log(p) + (1-y)*log(1-p)))/length(y)
+  }
+  dev_fun
+}
+```
 
+```{r}
+x_test <- test %>% select(-estado)
+prediction.glmnet.1 <- predict(modlogit, newx = as.matrix(x_test), type = "response") %>% as.vector()
+accuracy <- mean(ifelse(prediction.glmnet.1>0.5,1,0)==y_test[,2])
+devianza <- devianza_calc(x_test, estado_test)
+devianza(prediction.glmnet.1)
+```
+
+```{r bosques}
+library(rgdal)
+library(raster)
+library(caret)
+```
+
+TARDA AÑOS EN CORRER EL BOSQUE.
+
+```{r}
+modFit_rf <- train(as.factor(estado) ~., data = train, method = "rf" )
+```
+
+```{r}
+pred_rf <- raster::predict(modFit_rf, newdata = as.matrix(x_test), type = "prob") %>% as.vector()
+accuracy_rf <- mean(ifelse(pred_rf[,2]>0.5,1,0)==y_test[,2])
+devianza(ifelse(pred_rf[,2] == 0, 0.00001, pred_rf[,2]))
+```
