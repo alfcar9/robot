@@ -17,33 +17,18 @@ library(keras)
 library(RcppRoll)
 ```
 
-```{r create_csv}
-#setwd("~/Desktop/1er_Semestre/Aprendzaje Maquina/Proyectos/robot/autonomos-imgs/") #Asegurate de estar parado aqui, corre esto en consola.
-#setwd(~/home/egranadoo/autonomos-imgs")
-
-path <- "autonomos-imgs/"
-listpaths <- dir(path)
-m <- length(listpaths)
-file.names <- lapply(1:m, function(i){ 
-  path <- paste("autonomos-imgs/", listpaths[i],"/", sep="")
-  return(paste("autonomos-imgs/", listpaths[i],"/", dir(path), sep=""))
-})
-
-file.names[[4]] <- sample(file.names[[4]], 0.05*length(file.names[[4]]))
-                          
-file.names <- flatten_chr(file.names)
-```
 
 ```{r, cache=TRUE}
-resol <- 30   # recomiendo 10, 20, 30, ...etc Es el tamaño de la imagen reducida en porcentaje. 10% de la imagen original, por ejemplo.
-path <- "../images/imgs/"
+resol <- 30 
+path <- "imgs/"
+#path <- "../images/imgs/"
 file.names <- dir(path)
 num_obs <- length(file.names)
 dim <- (resol/100*480)*(resol/100*640)
 image_df <- rep(NA, dim) %>% t() %>% as.data.frame()
 
 for(i in 1:num_obs){
-  im <- load.image(paste(path,file.names[i], sep = ""))
+  im <- load.image(paste(path, file.names[i], sep = ""))
   thmb <- (resize(im,-resol,-resol) %>% imsplit("c"))[[2]]
   image_df[i,] <- (as.data.frame(thmb))$value %>% t()
   # print(i)
@@ -54,7 +39,7 @@ for(i in 1:num_obs){
 m <- 480*640*(resol/100)^2
 nrow <- 480*resol/100
 ncol <- 640*resol/100
-path_csv <- "/home/egranadoo/Dropbox/ITAM.Gary/Maestria/1 Semestre/aprendizaje_maquina/autonomos/robot/imgs-eval.csv"
+path_csv <- "~/Desktop/1er_Semestre/Aprendzaje Maquina/Proyectos/robot/imgs-eval.csv"
 image_df[,(m+1)] <- read.csv(file=path_csv, sep=",", colClasses=c("NULL", NA))
 # image_df[,(m+1)] <- rbinom(nrow(image_df), 1, prob = 0.2)
 colnames(image_df)[length(image_df)] <- "estado" 
