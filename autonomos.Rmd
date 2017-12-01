@@ -36,14 +36,17 @@ file.names <- flatten_chr(file.names)
 
 ```{r, cache=TRUE}
 resol <- 30   # recomiendo 10, 20, 30, ...etc Es el tamaño de la imagen reducida en porcentaje. 10% de la imagen original, por ejemplo.
+path <- "../images/imgs/"
+file.names <- dir(path)
 num_obs <- length(file.names)
 dim <- (resol/100*480)*(resol/100*640)
 image_df <- rep(NA, dim) %>% t() %>% as.data.frame()
 
 for(i in 1:num_obs){
-  im <- load.image(file.names[i])
+  im <- load.image(paste(path,file.names[i], sep = ""))
   thmb <- (resize(im,-resol,-resol) %>% imsplit("c"))[[2]]
   image_df[i,] <- (as.data.frame(thmb))$value %>% t()
+  # print(i)
 }
 ```
 
@@ -51,8 +54,9 @@ for(i in 1:num_obs){
 m <- 480*640*(resol/100)^2
 nrow <- 480*resol/100
 ncol <- 640*resol/100
-
-image_df[,(m+1)] <- rbinom(nrow(image_df), 1, prob = 0.2)
+path_csv <- "/home/egranadoo/Dropbox/ITAM.Gary/Maestria/1 Semestre/aprendizaje_maquina/autonomos/robot/imgs-eval.csv"
+image_df[,(m+1)] <- read.csv(file=path_csv, sep=",", colClasses=c("NULL", NA))
+# image_df[,(m+1)] <- rbinom(nrow(image_df), 1, prob = 0.2)
 colnames(image_df)[length(image_df)] <- "estado" 
 ```
 
@@ -67,6 +71,75 @@ mostrar_imagen <- function(renglon, dat){
 ```{r, fig.height=4}
 mostrar_imagen(2, image_df)
 ```
+
+
+```{r gui_disp_img}
+
+library(tcltk2)
+library(imager)
+tclRequire("Img")
+path <- "/home/egranadoo/Dropbox/ITAM.Gary/Maestria/1 Semestre/aprendizaje_maquina/autonomos/images/imgs/"
+i <- 1
+
+# Tk supports natively gif images, like this one:
+# imgfile <- system.file("/home/egranadoo/autonomos_alpha.png", mustWork = TRUE)
+imgfile <- list.files(path)
+# imgfile <- load.image("/home/egranadoo/autonomos_alpha.png")
+image1 <- tclVar()
+
+win1 <- tktoplevel()
+tkimage.create("photo", image1, file = paste(path, imgfile[i], sep = ""))
+win1$env$label <- tk2label(win1, image = image1)
+
+next_img <- function()
+{
+  i <<- i + 1
+  tkdestroy(win1$env$label)
+  print(paste(path, imgfile[i], sep = ""))
+  tkimage.create("photo", image1, file = paste(path, imgfile[i], sep = ""))
+  win1$env$label <<- tk2label(win1, image = image1)
+  tkpack(win1$env$label)
+}
+  # tkmessageBox(message = "You pressed OK!")
+
+# Create a Tk window with a label displaying this image
+
+close_fn <- function()
+{
+  tkdestroy(win1)
+}
+
+on_1 <- function(K)
+{
+  val <- -1
+  if(K == "1" || K == "KP_1")
+  {
+    val <- 1
+  }
+  if(K == "0" || K == "KP_0")
+  {
+    val <- 0
+  }
+  arr <- c(imgfile[i], val)
+  print(paste(arr[1], arr[2],sep = ","))
+  write.table(paste(arr[1], arr[2],sep = ","), file = "imgs-eval.csv", sep = ",", append = TRUE, quote = FALSE, col.names = FALSE, row.names = FALSE)
+  next_img()
+}
+
+win1$env$butOK <- tk2button(win1, text = "Next", width = -6, command = next_img)
+
+win1$env$butClose <- tk2button(win1, text = "Close", width = -6, command = close_fn)
+
+tkpack(win1$env$butOK)
+# tkpack(win1$env$butClose)
+tkbind(win1, "<Key>", on_1)
+
+
+# 
+# tkgrid(win1$env$butOK, padx = 20, pady = 15)
+
+```
+
 
 ```{r}
 set.seed(130912)
@@ -131,3 +204,7 @@ model_serialized <- serialize_model(model)
 
 #score <- (model$evaluate(x_test, y_test) %>% flatten_dbl())[1]
 ```
+
+
+
+
