@@ -8,58 +8,9 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(cache=TRUE)
 ```
 
-```{r, message=FALSE}
-library(imager)
-library(jpeg)
-library(readr)
-library(tidyverse)
-library(keras)
-library(RcppRoll)
-```
-
-
-```{r, cache=TRUE}
-resol <- 15 
-path <- "imgs/"
-#path <- "../images/imgs/"
-file.names <- dir(path)
-num_obs <- length(file.names)
-dim <- (resol/100*480)*(resol/100*640)
-image_df <- rep(NA, dim) %>% t() %>% as.data.frame()
-
-for(i in 1:num_obs){
-  im <- load.image(paste(path, file.names[i], sep = ""))
-  thmb <- (resize(im,-resol,-resol) %>% imsplit("c"))[[2]]
-  image_df[i,] <- (as.data.frame(thmb))$value %>% t()
-}
-```
-
-```{r}
-m <- 480*640*(resol/100)^2
-nrow <- 480*resol/100
-ncol <- 640*resol/100
-path_csv <- "~/Desktop/1er_Semestre/Aprendzaje Maquina/Proyectos/robot/imgs-eval.csv"
-image_df[,(m+1)] <- read.csv(file=path_csv, sep=",", colClasses=c("NULL", NA))
-colnames(image_df)[length(image_df)] <- "estado" 
-```
-
-```{r}
-mostrar_imagen <- function(renglon, dat){
-  v <- as.numeric(dat %>% dplyr::select(contains('V'))%>% .[renglon,])
-  mat <- (t(matrix(v, nrow = nrow, ncol = ncol, byrow=T))[,nrow:1])
-  image(mat, axes = F, col=gray(0:255/255))
-}
-```
-
-```{r, fig.height=4}
-mostrar_imagen(2, image_df)
-```
-
-
 ```{r gui_disp_img}
 
-library(tcltk2)
-library(imager)
+
 tclRequire("Img")
 path <- "/home/egranadoo/Dropbox/ITAM.Gary/Maestria/1 Semestre/aprendizaje_maquina/autonomos/images/imgs/"
 i <- 1
@@ -123,70 +74,119 @@ tkbind(win1, "<Key>", on_1)
 
 ```
 
-
 ```{r}
-set.seed(130912)
-
-trainid <- sample(1:num_obs, floor(num_obs*.7))
-testid <- setdiff(1:num_obs, trainid)
-
-train <- image_df[trainid, ]
-test <-  image_df[testid, ]
-
-x_train <- train %>% select(-estado) %>% as.matrix
-dim(x_train) <- c(nrow(x_train), nrow, ncol, 1)
-estado_train <- train %>% dplyr::select(estado) %>% flatten_dbl()
-y_train <- to_categorical(estado_train, 2)
-
-x_test <- test %>% select(-estado) %>% as.matrix()
-dim(x_test) <- c(nrow(x_test), nrow, ncol, 1)
-estado_test <- test %>% dplyr::select(estado) %>% flatten_dbl()
-y_test <- to_categorical(estado_test, 2)
+mostrar_imagen <- function(renglon, dat){
+  v <- as.numeric(dat %>% dplyr::select(contains('V'))%>% .[renglon,])
+  mat <- (t(matrix(v, nrow = nrow, ncol = ncol, byrow=T))[,nrow:1])
+  image(mat, axes = F, col=gray(0:255/255))
+}
 ```
 
+```{r, fig.height=4}
+mostrar_imagen(2, image_df)
+```
+
+```{r, message=FALSE}
+library(imager)
+#library(jpeg)
+library(tensorflow)
+library(readr)
+library(tidyverse)
+#library(RcppRoll)
+#library(tcltk2)
+library(keras)
+```
 
 ```{r}
-lambda1 <- 0.02
-lambda2 <- 0.02
-filtro1 <- 4
-filtro2 <- 12
-neuronas <- 20
-lr1 <- 0.045
-momentum1 <- 0.9
-
-model <- keras_model_sequential() 
-model %>%
-layer_conv_2d(filters = filtro1, kernel_size = c(3,3), activation = 'relu',
-              input_shape = c(nrow, ncol, 1), padding ='same',
-              kernel_regularizer = regularizer_l2(lambda1) ) %>%
-              layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
-              layer_dropout(rate = 0.25) %>%
-  
-layer_conv_2d(filters = filtro2, kernel_size = c(3,3), activation = 'relu',
-              input_shape = c(nrow, ncol, 1), padding ='same',
-              kernel_regularizer = regularizer_l2(lambda2) ) %>%
-              layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
-              layer_dropout(rate = 0.25) %>% 
-  
-layer_flatten() %>% 
-layer_dense(units = neuronas, activation = 'relu') %>%
-layer_dropout(rate = 0.50) %>%
-layer_dense(units = 2, activation = 'softmax')
-
-model %>% compile(
-  loss = 'categorical_crossentropy',
-  optimizer = optimizer_sgd(lr = lr1, momentum = momentum1),
-  metrics = c('accuracy','categorical_crossentropy')
-)
-history <- model %>% fit(
-  x_train, y_train,
-  epochs = 250, batch_size = (ncol*nrow), 
-  validation_data = list(x_test, y_test))
-
-model_serialized <- serialize_model(model)
-
-#score <- (model$evaluate(x_test, y_test) %>% flatten_dbl())[1]
+score_df <- data_frame(accuracy = as.double(), test_error = as.double(), time = as.double())
+resoluciones <- c(10)
 ```
+
+```{r, cache=TRUE}
+resol <- resoluciones[1]
+  path <- "imgs/"
+  #path <- "../images/imgs/"
+  file.names <- dir(path)
+  num_obs <- length(file.names)
+  dim <- (resol/100*480) *(resol/100*640)
+  image_df <- rep(NA, dim) %>% t() %>% as.data.frame()
+  
+  for(i in 1:num_obs){
+    im <- load.image(paste(path, file.names[i], sep = ""))
+    thmb <- (resize(im,-resol,-resol) %>% imsplit("c"))[[2]]
+    image_df[i,] <- (as.data.frame(thmb))$value %>% t()
+  }
+  
+  nrow <- 480*resol/100
+  ncol <- 640*resol/100
+  m <- nrow * ncol
+  path_csv <- "~/Desktop/1er_Semestre/Aprendzaje Maquina/Proyectos/robot/imgs-eval.csv"
+  image_df[,(m+1)] <- read.csv(file=path_csv, sep=",", colClasses=c("NULL", NA))
+  colnames(image_df)[(m+1)] <- "estado" 
+  
+  set.seed(130912)
+  
+  trainid <- sample(1:num_obs, floor(num_obs*.7))
+  testid <- setdiff(1:num_obs, trainid)
+  
+  train <- image_df[trainid, ]
+  test <-  image_df[testid, ]
+  
+  x_train <- train %>% select(-estado) %>% as.matrix
+  dim(x_train) <- c(nrow(x_train), nrow, ncol, 1)
+  estado_train <- train %>% dplyr::select(estado) %>% flatten_dbl()
+  y_train <- to_categorical(estado_train, 2)
+  
+  x_test <- test %>% select(-estado) %>% as.matrix()
+  dim(x_test) <- c(nrow(x_test), nrow, ncol, 1)
+  estado_test <- test %>% dplyr::select(estado) %>% flatten_dbl()
+  y_test <- to_categorical(estado_test, 2)
+```
+
+```{r}
+  lambda1 <- 0.012
+  lambda2 <- 0.0
+  filtro1 <- 8
+  filtro2 <- 12
+  neuronas <- 25
+  lr1 <- 0.05
+  momentum1 <- 0.9
+  
+  model <- keras_model_sequential() 
+  model %>%
+  layer_conv_2d(filters = filtro1, kernel_size = c(3,3), activation = 'relu',
+                input_shape = c(nrow, ncol, 1), padding ='same',
+                kernel_regularizer = regularizer_l2(lambda1) ) %>%
+                layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+                layer_dropout(rate = 0.25) %>%
+    
+  layer_conv_2d(filters = filtro2, kernel_size = c(3,3), activation = 'relu',
+                input_shape = c(nrow, ncol, 1), padding ='same',
+                kernel_regularizer = regularizer_l2(lambda2) ) %>%
+                layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+                layer_dropout(rate = 0.25) %>% 
+    
+  layer_flatten() %>% 
+  layer_dense(units = neuronas, activation = 'relu') %>%
+  layer_dropout(rate = 0.50) %>%
+  layer_dense(units = 2, activation = 'softmax')
+  
+  model %>% compile(
+    loss = 'categorical_crossentropy',
+    optimizer = optimizer_sgd(lr = lr1, momentum = momentum1),
+    metrics = c('accuracy','categorical_crossentropy')
+  )
+  history <- model %>% fit(
+    x_train, y_train,
+    epochs = 240, batch_size = (ncol*nrow), 
+    validation_data = list(x_test, y_test)
+    )
+  
+   t1 <- system.time(w <- (model$evaluate(x_test, y_test) %>% flatten_dbl())[2:1])
+   w
+   t1 <- as.double(t1[1])
+```
+
 
 ```{r}
 plot(history)
@@ -197,6 +197,9 @@ Modelo logit
 library(glmnet)
 library(data.table)
 library(lattice)
+```
+
+```{r}
 x_train <- train %>% select(-estado)
 modlogit <- cv.glmnet(as.matrix(x_train), estado_train, alpha=1, family = 'binomial')
 plot(modlogit)
@@ -213,7 +216,7 @@ devianza_calc <- function(x, y){
 
 ```{r}
 x_test <- test %>% select(-estado)
-prediction.glmnet.1 <- predict(modlogit, newx = as.matrix(x_test), type = "response") %>% as.vector()
+system.time({prediction.glmnet.1 <- predict(modlogit, newx = as.matrix(x_test), type = "response") %>% as.vector()})
 accuracy <- mean(ifelse(prediction.glmnet.1>0.5,1,0)==y_test[,2])
 devianza <- devianza_calc(x_test, estado_test)
 devianza(prediction.glmnet.1)
@@ -232,7 +235,8 @@ modFit_rf <- train(as.factor(estado) ~., data = train, method = "rf" )
 ```
 
 ```{r}
-pred_rf <- raster::predict(modFit_rf, newdata = as.matrix(x_test), type = "prob") %>% as.vector()
+system.time({
+pred_rf <- raster::predict(modFit_rf, newdata = as.matrix(x_test), type = "prob") %>% as.vector()})
 accuracy_rf <- mean(ifelse(pred_rf[,2]>0.5,1,0)==y_test[,2])
 devianza(ifelse(pred_rf[,2] == 0, 0.00001, pred_rf[,2]))
 ```
